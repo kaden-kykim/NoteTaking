@@ -7,11 +7,13 @@
 
 import UIKit
 
-class NoteTakingViewController: UIViewController {
+class NoteTakingViewController: UINavigationController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        
+        let fileBrowserCoordinator = FileBrowserCoordinatorImpl(navigationController: self)
+        fileBrowserCoordinator.start()
     }
     
 }
