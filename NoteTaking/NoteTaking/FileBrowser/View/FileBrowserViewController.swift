@@ -8,22 +8,40 @@
 import UIKit
 
 class FileBrowserViewController: UIViewController {
-
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        // Do any additional setup after loading the view.
+        title = "File Browser"
+        view.backgroundColor = .systemBackground
+        
+        testNavigation()
     }
     
-
-    /*
-    // MARK: - Navigation
-
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destination.
-        // Pass the selected object to the new view controller.
+    
+    
+    // MARK: - Start: Test for navigation
+    var coordinator: FileBrowserCoordinatorImpl!
+    
+    private func testNavigation() {
+        // for browser self
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Browser", style: .plain, target: self, action: #selector(moveToFileBrowser(_:)))
+        
+        // for note
+        let noteButton = UIButton()
+        noteButton.setTitle("Push to Note", for: .normal)
+        noteButton.setTitleColor(.label, for: .normal)
+        noteButton.addTarget(self, action: #selector(moveToNote(_:)), for: .touchUpInside)
+        view.addSubview(noteButton)
+        noteButton.matchParent()
     }
-    */
-
+    
+    @objc func moveToFileBrowser(_ sender: UIButton) {
+        coordinator.push()
+    }
+    
+    @objc func moveToNote(_ sender: UIButton) {
+        coordinator.push(to: URL(string: "dummy"), isNote: true)
+    }
+    // MARK: - End: Test for navigation
+    
 }
