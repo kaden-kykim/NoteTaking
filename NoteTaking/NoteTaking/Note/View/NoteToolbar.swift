@@ -112,17 +112,17 @@ extension NoteToolbar {
         }
         
         viewModel.fontStyleStatus
-            .subscribe(onNext: { [weak self] status in
+            .subscribe(onNext: { [weak self] in
                 if let styleButtons = self?.styleButtons {
                     for (index, styleButton) in styleButtons.enumerated() {
-                        styleButton.isOn = status[index]
+                        styleButton.isOn = $0[index]
                     }
                 }
             }).disposed(by: disposeBag)
         
         viewModel.screenRotated
-            .subscribe(onNext: { [weak self] rotation in
-                switch rotation {
+            .subscribe(onNext: { [weak self] in
+                switch $0 {
                 case .landscapeLeft, .landscapeRight:
                     self?.currentHeight = NoteToolbar.defaultHeight
                 case .portrait:
@@ -131,8 +131,8 @@ extension NoteToolbar {
                 }
             }).disposed(by: disposeBag)
         
-        viewModel.canUndo.subscribe(onNext: { [weak self] enable in self?.undoButton.isOn = enable }).disposed(by: disposeBag)
-        viewModel.canRedo.subscribe(onNext: { [weak self] enable in self?.redoButton.isOn = enable }).disposed(by: disposeBag)
+        viewModel.canUndo.subscribe(onNext: { [weak self] in self?.undoButton.isOn = $0 }).disposed(by: disposeBag)
+        viewModel.canRedo.subscribe(onNext: { [weak self] in self?.redoButton.isOn = $0 }).disposed(by: disposeBag)
     }
 }
 

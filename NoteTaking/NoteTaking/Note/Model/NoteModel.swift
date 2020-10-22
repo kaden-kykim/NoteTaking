@@ -23,11 +23,29 @@ enum NoteFontStyle: Int, CaseIterable, CustomStringConvertible {
 struct NoteModel {
     private let globalModel = NoteTakingModel.instance
     private let url: URL
+    private let contentURL: URL
     let name: String
     
     init (url: URL) {
         self.url = url
+        self.contentURL = globalModel.getNoteContentURL(at: url)
         let pathComponent = url.lastPathComponent
         self.name = String(pathComponent.prefix(pathComponent.count - NoteTakingModel.noteSuffix.count))
     }
+}
+
+extension NoteModel {
+    
+    func loadNote() throws -> NSAttributedString {
+        do {
+            return try NSAttributedString.init(from: contentURL)
+        } catch {
+            throw error
+        }
+    }
+    
+    func saveNote(_ attributedString: NSAttributedString) throws {
+        try attributedString.save(to: contentURL)
+    }
+    
 }

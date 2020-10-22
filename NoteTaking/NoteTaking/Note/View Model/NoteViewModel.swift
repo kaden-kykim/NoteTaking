@@ -26,6 +26,7 @@ protocol NoteViewModel: AnyObject {
     var noteFileIOError: PublishRelay<NoteFileIOError> { get }
     
     // Output: Note
+    var noteDidLoad: PublishRelay<NSAttributedString> { get }
     var noteUndo: PublishRelay<Void> { get }
     var noteRedo: PublishRelay<Void> { get }
     var toggleStyle: PublishRelay<(NoteFontStyle, Bool)> { get }
@@ -38,6 +39,9 @@ protocol NoteViewModel: AnyObject {
 }
 
 final class NoteViewModelImpl: NoteViewModel {
+    
+    // MARK: - Private Constant
+    private let saveDelayInMilli = 300
     
     // MARK: - Input
     let viewDidLoad = PublishRelay<Void>()
@@ -56,6 +60,7 @@ final class NoteViewModelImpl: NoteViewModel {
     let noteFileIOError = PublishRelay<NoteFileIOError>()
     
     // MARK: - Output: Note
+    let noteDidLoad = PublishRelay<NSAttributedString>()
     let noteUndo = PublishRelay<Void>()
     let noteRedo = PublishRelay<Void>()
     let toggleStyle = PublishRelay<(NoteFontStyle, Bool)>()
@@ -69,6 +74,7 @@ final class NoteViewModelImpl: NoteViewModel {
     // MARK: - Private Properties (Reactive)
     private let coordinator: Coordinator
     private let disposeBag = DisposeBag()
+    private var saveNoteDisposable = SingleAssignmentDisposable()
     private let backgroundScheduler = ConcurrentDispatchQueueScheduler.init(qos: .background)
     
     // MARK: - Private Properties
@@ -80,6 +86,7 @@ final class NoteViewModelImpl: NoteViewModel {
         self.noteModel = NoteModel(url: fileURL)
         
         bindOnViewLifecycle()
+        bindOnNote()
         bindOnToolbar()
     }
     
@@ -89,16 +96,47 @@ final class NoteViewModelImpl: NoteViewModel {
             .observeOn(backgroundScheduler)
             .subscribeOn(backgroundScheduler)
             .subscribe(onNext: { [weak self] in
-                self?.noteTitle.accept(self?.noteModel.name ?? "")
+                guard let self = self else { return }
+                self.noteTitle.accept(self.noteModel.name)
+                do {
+                    self.noteDidLoad.accept(try self.noteModel.loadNote())
+                } catch {
+                    self.noteFileIOError.accept(error as? NoteFileIOError ?? NoteFileIOError.System)
+                }
+            }).disposed(by: disposeBag)
+    }
+    
+    private func bindOnNote() {
+        noteDidChange
+            .observeOn(MainScheduler.instance)
+            .subscribeOn(backgroundScheduler)
+            .subscribe(onNext: { [weak self] in self?.saveNote($0)
             }).disposed(by: disposeBag)
     }
     
     private func bindOnToolbar() {
         toolbarStyleTapped
-            .subscribe(onNext: { [weak self] style in
+            .subscribe(onNext: { [weak self] in
                 guard let self = self else { return }
-                self.toggleStyle.accept((style, self.fontStyleStatus.value[style.rawValue]))
+                self.toggleStyle.accept(($0, self.fontStyleStatus.value[$0.rawValue]))
             }).disposed(by: disposeBag)
+    }
+    
+    private func saveNote(_ attributedString: NSAttributedString) {
+        saveNoteDisposable.dispose()
+        saveNoteDisposable = SingleAssignmentDisposable()
+        let noteDisposable = Observable<NSAttributedString>
+            .just(attributedString)
+            .delaySubscription(.milliseconds(saveDelayInMilli), scheduler: backgroundScheduler)
+            .subscribe(onNext: { [weak self] in
+                guard let self = self else { return }
+                do {
+                    try self.noteModel.saveNote($0)
+                } catch {
+                    self.noteFileIOError.accept(error as? NoteFileIOError ?? NoteFileIOError.System)
+                }
+            })
+        saveNoteDisposable.setDisposable(noteDisposable)
     }
     
 }

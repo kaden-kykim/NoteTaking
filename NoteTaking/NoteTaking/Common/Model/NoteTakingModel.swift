@@ -72,11 +72,15 @@ extension NoteTakingModel {
     
     @discardableResult
     func createNoteContentFile(at url: URL) -> URL {
-        let contentURL = url.appendingPathComponent(NoteTakingModel.noteContentFileName)
+        let contentURL = getNoteContentURL(at: url)
         if !exist(contentURL) {
             fileManager.createFile(atPath: contentURL.path, contents: nil, attributes: nil)
         }
         return contentURL
+    }
+    
+    func getNoteContentURL(at url: URL) -> URL {
+        return url.appendingPathComponent(NoteTakingModel.noteContentFileName)
     }
     
     private func exist(_ url: URL) -> Bool {

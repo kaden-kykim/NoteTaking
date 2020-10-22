@@ -9,9 +9,15 @@ import RxSwift
 
 class NoteTextView: UITextView {
 
+    // MARK: - Constant Properties
+    private static let noteDefaultFont = UIFont.systemFont(ofSize: 17)
+    private static let noteDefaultFontColor = UIColor.label
+    private static let noteDefaultFontBackgroundColor = UIColor.clear
+    
     // MARK: - Properties
     private let disposeBag = DisposeBag()
-    private weak var viewModel: NoteViewModel?
+    fileprivate weak var viewModel: NoteViewModel?
+    fileprivate var changedNoteRange = NSRange()
     
     // MARK: - Initialization
     required init(viewModel: NoteViewModel) {
@@ -19,9 +25,165 @@ class NoteTextView: UITextView {
         self.viewModel = viewModel
         
         setupView()
+        bindOnNote()
     }
     
     required init?(coder: NSCoder) { fatalError() }
+    
+}
+
+// MARK: - Bindings
+extension NoteTextView {
+    private func bindOnNote() {
+        guard let viewModel = viewModel else { return }
+        viewModel.noteDidLoad
+            .subscribe(onNext: { [weak self] attributedString in
+                DispatchQueue.main.async {
+                    self?.attributedText = attributedString
+                    self?.setDefaultAttributesString()
+                    self?.alignImageAttachment()
+                }
+            }).disposed(by: disposeBag)
+        
+        viewModel.toggleStyle
+            .subscribe(onNext: { [weak self] in
+                let toEnable = !$1
+                switch $0 {
+                case .bold, .italic:
+                    if let font = self?.typingAttributes[.font] as? UIFont {
+                        let newFont = $0 == .bold ? font.toggleSemiBold() : font.toggleItalic()
+                        self?.typingAttributes[.font] = newFont
+                        if let range = self?.selectedRange, range.length > 0 {
+                            self?.textStorage.addAttribute(.font, value: newFont, range: range)
+                            if let self = self { self.noteDidChangeEvent() }
+                        }
+                    }
+                case .underline, .strikethrough:
+                    let key: NSAttributedString.Key = $0 == .underline ? .underlineStyle : .strikethroughStyle
+                    guard let self = self else { return }
+                    if toEnable { self.typingAttributes[key] = 1 }
+                    else { self.typingAttributes.removeValue(forKey: key) }
+                    let range = self.selectedRange
+                    if range.length > 0 {
+                        if toEnable { self.textStorage.addAttribute(key, value: 1, range: range) }
+                        else { self.textStorage.removeAttribute(key, range: range) }
+                        self.noteDidChangeEvent()
+                    }
+                }
+                if let viewModel = self?.viewModel {
+                    var fontStatus = viewModel.fontStyleStatus.value
+                    fontStatus[$0.rawValue] = toEnable
+                    viewModel.fontStyleStatus.accept(fontStatus)
+                }
+            }).disposed(by: disposeBag)
+        
+        viewModel.attachImageFromPicker
+            .subscribe(onNext: { [weak self] in
+                guard let self = self else { return }
+                let textAttachment = NSTextAttachment()
+                textAttachment.image = $0.resize(toWidth: max(self.frame.width, self.frame.height) * 0.975)
+                var selectedRange = self.selectedRange
+                let attrString = self.attributedText.mutableCopy() as! NSMutableAttributedString
+                attrString.replaceCharacters(in: selectedRange, with: NSAttributedString(attachment: textAttachment))
+                let newLineString = NSMutableAttributedString(string: "\n")
+                newLineString.setFont(NoteTextView.noteDefaultFont, range: NSMakeRange(0, newLineString.length))
+                attrString.insert(newLineString, at: selectedRange.location + selectedRange.length + 1)
+                self.attributedText = attrString
+                selectedRange.location += newLineString.length + 1
+                self.selectedRange = selectedRange
+                self.alignImageAttachment()
+                self.noteDidChangeEvent()
+            }).disposed(by: disposeBag)
+        
+        viewModel.noteUndo.subscribe(onNext: { [weak self] in self?.undoManager?.undo() }).disposed(by: disposeBag)
+        viewModel.noteRedo.subscribe(onNext: { [weak self] in self?.undoManager?.redo() }).disposed(by: disposeBag)
+        
+        viewModel.screenRotated
+            .subscribe(onNext: { [weak self] in
+                switch $0 {
+                case .landscapeLeft, .landscapeRight, .portrait:
+                    self?.alignImageAttachment()
+                default: break
+                }
+            }).disposed(by: disposeBag)
+        
+        rx.didBeginEditing
+            .observeOn(MainScheduler.asyncInstance)
+            .subscribe(onNext: { [weak self] _ in
+                guard let self = self else { return }
+                self.viewModel?.setEditing.accept(true)
+                if let textRange = self.selectedTextRange {
+                    self.scrollRectToVisible(self.caretRect(for: textRange.start), animated: true)
+                }
+            }).disposed(by: disposeBag)
+
+        rx.didChange.subscribe(onNext: { [weak self] _ in self?.noteDidChangeEvent() }).disposed(by: disposeBag)
+
+        rx.didChangeSelection
+            .subscribe(onNext: { [weak self] _ in
+                guard let self = self else { return }
+                self.changedNoteRange.length = self.selectedRange.location - self.changedNoteRange.location
+                var fontStyle = [Bool](repeating: false, count: NoteFontStyle.allCases.count)
+                if let font = self.typingAttributes[.font] as? UIFont {
+                    self.typingAttributes[.font] = font.copyTraits(to: NoteTextView.noteDefaultFont)
+                    fontStyle[NoteFontStyle.bold.rawValue] = font.fontDescriptor.symbolicTraits.contains(.traitBold)
+                    fontStyle[NoteFontStyle.italic.rawValue] = font.fontDescriptor.symbolicTraits.contains(.traitItalic)
+                }
+                fontStyle[NoteFontStyle.underline.rawValue] = self.typingAttributes[.underlineStyle] != nil
+                fontStyle[NoteFontStyle.strikethrough.rawValue] = self.typingAttributes[.strikethroughStyle] != nil
+                self.viewModel?.fontStyleStatus.accept(fontStyle)
+
+                self.typingAttributes[.foregroundColor] = UIColor.label
+                self.typingAttributes[.backgroundColor] = UIColor.clear
+            }).disposed(by: disposeBag)
+        
+        let delegate = NoteTextViewDelegate()
+        delegate.noteTextView = self
+        rx.delegate.setForwardToDelegate(delegate, retainDelegate: true)
+    }
+}
+
+// MARK: - TextView Helper Methods
+extension NoteTextView {
+    
+    private func alignImageAttachment(range: NSRange? = nil) {
+        let range = range ?? NSMakeRange(0, attributedText.length)
+        guard range.length >= 0 else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.isScrollEnabled = false
+            defer { self?.isScrollEnabled = true }
+            if let self = self, let attrText = self.attributedText.mutableCopy() as? NSMutableAttributedString {
+                attrText.alignTextAttachment(of: self.bounds.width * 0.975, range: range)
+                self.attributedText = attrText
+            }
+        }
+    }
+    
+    private func setDefaultAttributesString(range: NSRange? = nil) {
+        let range = range ?? NSMakeRange(0, attributedText.length)
+        guard range.length > 1 else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.isScrollEnabled = false
+            defer { self?.isScrollEnabled = true }
+            if let attrString = self?.attributedText,
+               let mutableAttrString = attrString.mutableCopy() as? NSMutableAttributedString {
+                if range.location + range.length <= mutableAttrString.length {
+                    mutableAttrString.setFontWithoutTraits(NoteTextView.noteDefaultFont, range: range)
+                    mutableAttrString.setFontColor(range: range)
+                    self?.attributedText = mutableAttrString
+                    self?.selectedRange = NSMakeRange(range.location + range.length, 0)
+                }
+            }
+        }
+    }
+    
+    private func noteDidChangeEvent() {
+        viewModel?.noteDidChange.accept(attributedText)
+        DispatchQueue.main.async { [weak self] in
+            self?.viewModel?.canUndo.accept(self?.undoManager?.canUndo ?? false)
+            self?.viewModel?.canRedo.accept(self?.undoManager?.canRedo ?? false)
+        }
+    }
     
 }
 
@@ -29,7 +191,33 @@ extension NoteTextView {
     func setupView() {
         isEditable = true
         autocorrectionType = .no
-        // View test
-        text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Id volutpat lacus laoreet non curabitur gravida arcu ac tortor.Nec ullamcorper sit amet risus nullam. Pretium viverra suspendisse potenti nullam ac tortor. Nunc sed blandit libero volutpat sed cras ornare arcu. Sed euismod nisi porta lorem mollis. Cursus sit amet dictum sit amet justo donec enim. Ipsum dolor sit amet consectetur adipiscing elit pellentesque. Pellentesque sit amet porttitor eget. Sed odio morbi quis commodo odio aenean sed adipiscing. Et ultrices neque ornare aenean euismod elementum nisi. Nibh praesent tristique magna sit amet purus gravida quis. Eget magna fermentum iaculis eu non diam phasellus vestibulum. Integer eget aliquet nibh praesent. Non enim praesent elementum facilisis. Eget mi proin sed libero enim sed faucibus. Iaculis eu non diam phasellus vestibulum lorem. Eget nulla facilisi etiam dignissim diam. Viverra accumsan in nisl nisi scelerisque eu. Pellentesque dignissim enim sit amet. Vel elit scelerisque mauris pellentesque pulvinar pellentesque habitant morbi tristique. Adipiscing diam donec adipiscing tristique. Ut eu sem integer vitae. Gravida neque convallis a cras semper auctor neque vitae. Non tellus orci ac auctor augue mauris augue. Et egestas quis ipsum suspendisse ultrices. Faucibus turpis in eu mi bibendum neque egestas congue. Malesuada fames ac turpis egestas maecenas pharetra convallis. Neque gravida in fermentum et sollicitudin. Nunc sed blandit libero volutpat sed cras ornare arcu. Pulvinar neque laoreet suspendisse interdum consectetur libero. Molestie ac feugiat sed lectus vestibulum mattis. Sit amet massa vitae tortor. Tempus urna et pharetra pharetra massa massa. Sodales ut eu sem integer vitae justo. Eget nulla facilisi etiam dignissim diam quis. Id cursus metus aliquam eleifend. Mauris a diam maecenas sed enim ut sem viverra. Tellus integer feugiat scelerisque varius morbi enim nunc faucibus a. Convallis a cras semper auctor neque vitae. Purus non enim praesent elementum. Amet risus nullam eget felis. Condimentum id venenatis a condimentum vitae sapien pellentesque habitant. Malesuada fames ac turpis egestas maecenas. Lorem sed risus ultricies tristique nulla. Diam sit amet nisl suscipit adipiscing. Ornare aenean euismod elementum nisi quis eleifend quam. Vestibulum mattis ullamcorper velit sed ullamcorper morbi tincidunt. Donec adipiscing tristique risus nec feugiat in fermentum posuere urna. Morbi tristique senectus et netus et malesuada fames ac. Orci ac auctor augue mauris augue neque gravida in. Ut placerat orci nulla pellentesque dignissim. Suspendisse potenti nullam ac tortor. Scelerisque purus semper eget duis at tellus at urna. Tortor pretium viverra suspendisse potenti. Magna sit amet purus gravida. Consequat interdum varius sit amet mattis vulputate. Faucibus purus in massa tempor nec feugiat. Etiam sit amet nisl purus in mollis nunc sed id. Vulputate dignissim suspendisse in est ante in. Eu augue ut lectus arcu bibendum at varius vel. Dolor sit amet consectetur adipiscing elit pellentesque habitant. Mauris pharetra et ultrices neque ornare aenean euismod elementum. Metus dictum at tempor commodo. Sed nisi lacus sed viverra tellus in. Dolor magna eget est lorem. Mus mauris vitae ultricies leo integer malesuada nunc. Duis convallis convallis tellus id. Viverra orci sagittis eu volutpat odio facilisis mauris sit. Et pharetra pharetra massa massa ultricies mi quis. Habitasse platea dictumst vestibulum rhoncus. Euismod quis viverra nibh cras pulvinar mattis nunc sed blandit. Lobortis scelerisque fermentum dui faucibus. Lobortis mattis aliquam faucibus purus in massa. At volutpat diam ut venenatis tellus in metus. Diam sollicitudin tempor id eu nisl nunc mi ipsum. Eros in cursus turpis massa tincidunt dui ut ornare lectus. Rhoncus aenean vel elit scelerisque mauris. Sem et tortor consequat id porta nibh venenatis. Eleifend mi in nulla posuere sollicitudin aliquam ultrices sagittis. Odio ut sem nulla pharetra diam sit amet nisl. Egestas pretium aenean pharetra magna ac placerat vestibulum lectus mauris. Curabitur vitae nunc sed velit dignissim. Id ornare arcu odio ut sem. Nunc vel risus commodo viverra maecenas accumsan lacus. Condimentum lacinia quis vel eros donec. Ornare aenean euismod elementum nisi quis. At urna condimentum mattis pellentesque id nibh tortor id aliquet. Proin fermentum leo vel orci porta. Egestas dui id ornare arcu odio ut. Eget egestas purus viverra accumsan in nisl. Amet dictum sit amet justo donec. Sed viverra ipsum nunc aliquet. Augue interdum velit euismod in pellentesque massa placerat. Suspendisse sed nisi lacus sed. Et tortor at risus viverra adipiscing at. Duis ut diam quam nulla porttitor massa. Arcu non odio euismod lacinia at. Scelerisque eu ultrices vitae auctor eu. Turpis egestas maecenas pharetra convallis. Sit amet risus nullam eget. Pellentesque pulvinar pellentesque habitant morbi tristique senectus. Pellentesque adipiscing commodo elit at. Tellus at urna condimentum mattis pellentesque id. Magna sit amet purus gravida quis blandit turpis. Interdum varius sit amet mattis. Suspendisse sed nisi lacus sed viverra tellus in hac habitasse. Vitae suscipit tellus mauris a diam maecenas sed. Magna fringilla urna porttitor rhoncus dolor purus non enim praesent. Vitae congue eu consequat ac. Id venenatis a condimentum vitae sapien pellentesque habitant morbi. Et leo duis ut diam quam. Neque gravida in fermentum et sollicitudin. Magna etiam tempor orci eu lobortis elementum nibh tellus molestie. At quis risus sed vulputate odio ut. Ipsum suspendisse ultrices gravida dictum fusce. Id neque aliquam vestibulum morbi blandit cursus risus at. Consequat ac felis donec et odio pellentesque diam volutpat. Enim eu turpis egestas pretium aenean pharetra. Diam quis enim lobortis scelerisque. Ultricies leo integer malesuada nunc vel. Sed viverra ipsum nunc aliquet bibendum enim facilisis gravida neque. A arcu cursus vitae congue. Ut tristique et egestas quis ipsum suspendisse ultrices gravida dictum. Egestas erat imperdiet sed euismod nisi porta lorem. Elit duis tristique sollicitudin nibh sit. Accumsan lacus vel facilisis volutpat. Dictum varius duis at consectetur lorem donec. Ultricies leo integer malesuada nunc vel risus. Sit amet consectetur adipiscing elit ut aliquam purus. Sit amet consectetur adipiscing elit pellentesque habitant morbi tristique senectus. Tellus mauris a diam maecenas sed enim. A cras semper auctor neque vitae tempus quam pellentesque nec. Lectus urna duis convallis convallis. Imperdiet sed euismod nisi porta lorem mollis aliquam. Faucibus pulvinar elementum integer enim neque volutpat ac tincidunt vitae. Blandit volutpat maecenas volutpat blandit aliquam etiam erat velit scelerisque. Dictum at tempor commodo ullamcorper a lacus vestibulum. In dictum non consectetur a erat nam at lectus urna. Quam lacus suspendisse faucibus interdum posuere lorem ipsum. Quis blandit turpis cursus in hac habitasse platea. Sed viverra ipsum nunc aliquet bibendum enim facilisis gravida. Nisi quis eleifend quam adipiscing vitae proin. Cras ornare arcu dui vivamus arcu felis bibendum ut tristique. Lobortis scelerisque fermentum dui faucibus in ornare quam. Tincidunt tortor aliquam nulla facilisi cras fermentum. Netus et malesuada fames ac turpis egestas maecenas pharetra. Risus nec feugiat in fermentum posuere urna nec. Non sodales neque sodales ut. Ante metus dictum at tempor commodo ullamcorper a lacus vestibulum. Nisi vitae suscipit tellus mauris a diam maecenas sed. Auctor eu augue ut lectus arcu. Scelerisque in dictum non consectetur. Tortor at risus viverra adipiscing. Sit amet luctus venenatis lectus magna. Mauris commodo quis imperdiet massa tincidunt nunc. Bibendum enim facilisis gravida neque convallis a cras semper auctor."
+        typingAttributes = [NSAttributedString.Key.font: NoteTextView.noteDefaultFont,
+                            NSAttributedString.Key.foregroundColor: NoteTextView.noteDefaultFontColor,
+                            NSAttributedString.Key.backgroundColor: NoteTextView.noteDefaultFontBackgroundColor]
     }
+}
+
+// MARK: - Delegate class
+class NoteTextViewDelegate: NSObject, UITextViewDelegate {
+    
+    weak var noteTextView: NoteTextView?
+    
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        noteTextView?.changedNoteRange.location = range.location
+        return true
+    }
+
+    func textView(_ textView: UITextView, shouldInteractWith textAttachment: NSTextAttachment, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+        guard let note = noteTextView else { return false }
+        if let newPositionFrom = note.position(from: note.beginningOfDocument, offset: characterRange.location + characterRange.length - 1),
+           let newPositionTo = note.position(from: note.beginningOfDocument, offset: characterRange.location + characterRange.length) {
+            note.selectedTextRange = note.textRange(from: newPositionFrom, to: newPositionTo)
+        }
+        noteTextView?.viewModel?.setEditing.accept(true)
+        switch interaction {
+        case .presentActions: return false
+        default: return true
+        }
+    }
+
 }

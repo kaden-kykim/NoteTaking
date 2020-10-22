@@ -17,6 +17,7 @@ class NoteViewController: UIViewController {
         
         bindOnNavigationBar()
         bindOnImagePicker()
+        bindOnEditStatus()
         
         viewModel.viewDidLoad.accept(())
     }
@@ -49,16 +50,22 @@ extension NoteViewController {
     
     private func bindOnImagePicker() {
         viewModel.toolbarShowImagePicker
-            .subscribe(onNext: { [weak self] sourceType in
+            .subscribe(onNext: { [weak self] in
                 let imagePicker = UIImagePickerController()
                 imagePicker.delegate = self
-                imagePicker.sourceType = sourceType
+                imagePicker.sourceType = $0
                 self?.present(imagePicker, animated: true, completion: nil)
             }).disposed(by: disposeBag)
     }
     
+    private func bindOnEditStatus() {
+        viewModel.setEditing
+            .subscribe(onNext: { [weak self] in
+                self?.setEditing($0, animated: true)
+            }).disposed(by: disposeBag)
+    }
+    
 }
-
 
 // MARK: - UI Setup
 extension NoteViewController {
