@@ -122,13 +122,10 @@ extension NoteToolbar {
         
         viewModel.screenRotated
             .subscribe(onNext: { [weak self] in
-                switch $0 {
-                case .landscapeLeft, .landscapeRight:
-                    self?.currentHeight = NoteToolbar.defaultHeight
-                case .portrait:
-                    self?.currentHeight = NoteToolbar.defaultHeight * 2
-                default: break
+                DispatchQueue.main.async { [weak self] in
+                    self?.safeAreaBottomInset = UIApplication.shared.windows.filter {$0.isKeyWindow}.first?.safeAreaInsets.bottom ?? 0
                 }
+                self?.setCurrentHeight(by: $0)
             }).disposed(by: disposeBag)
         
         viewModel.canUndo.subscribe(onNext: { [weak self] in self?.undoButton.isOn = $0 }).disposed(by: disposeBag)
@@ -178,17 +175,37 @@ extension NoteToolbar {
     }
     
     private func setBackgroundHeight() {
-        toolbarBGHeightConstraint.constant = currentHeight + (viewHasKeyboard ? 0 : safeAreaBottomInset)
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.toolbarBGHeightConstraint.constant = self.currentHeight + (self.viewHasKeyboard ? 0 : self.safeAreaBottomInset)
+        }
     }
     
     private func setToolbarLayout(isPortrait: Bool) {
-        toolbarheightConstraint.constant = currentHeight
-        if isPortrait {
-            toolbarSystemWidthConstraint.isActive = false
-            toolbarSystemLeadingConstraint.isActive = true
-        } else {
-            toolbarSystemLeadingConstraint.isActive = false
-            toolbarSystemWidthConstraint.isActive = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.toolbarheightConstraint.constant = self.currentHeight
+            if isPortrait {
+                self.toolbarSystemWidthConstraint.isActive = false
+                self.toolbarSystemLeadingConstraint.isActive = true
+            } else {
+                self.toolbarSystemLeadingConstraint.isActive = false
+                self.toolbarSystemWidthConstraint.isActive = true
+            }
+        }
+    }
+    
+    func setCurrentHeight(by orientation: UIDeviceOrientation) {
+        switch orientation {
+        case .landscapeLeft, .landscapeRight:
+            self.currentHeight = NoteToolbar.defaultHeight
+        case .portrait:
+            self.currentHeight = NoteToolbar.defaultHeight * 2
+        case .faceUp, .faceDown:
+            let screenBounds = UIScreen.main.bounds
+            self.currentHeight = NoteToolbar.defaultHeight * (screenBounds.width < screenBounds.height ? 2 : 1)
+        default:
+            break
         }
     }
     
