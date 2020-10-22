@@ -22,6 +22,14 @@ class NoteViewController: UIViewController {
         viewModel.viewDidLoad.accept(())
     }
     
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        DispatchQueue.main.async {
+            self.toolbar.setCurrentHeight(by: UIDevice.current.orientation)
+            self.noteBottomConstraintWithSafe.constant = -(self.toolbar.currentHeight + 2)
+        }
+    }
+    
     // MARK: - Properties
     var viewModel: NoteViewModel!
     private let disposeBag = DisposeBag()
