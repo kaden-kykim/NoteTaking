@@ -66,8 +66,12 @@ extension FileBrowserModel {
         }
     }
     
-    func deleteDirectory(_ pathComponent: PathComponent) {
-        globalModel.deleteDirectory(at: url.appendingPathComponent(pathComponent.pathName))
+    func deleteDirectory(_ pathComponent: PathComponent) -> Bool {
+        return globalModel.deleteDirectory(at: url.appendingPathComponent(pathComponent.pathName))
+    }
+    
+    func getURL(of pathComponent: PathComponent) -> URL {
+        return url.appendingPathComponent(pathComponent.pathName)
     }
     
 }

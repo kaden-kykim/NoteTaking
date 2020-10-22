@@ -64,6 +64,17 @@ extension FileBrowserViewController {
         pathComponentsTableView.rx.itemSelected
             .subscribe(onNext: { [weak self] in
                 self?.pathComponentsTableView.deselectRow(at: $0, animated: true)
+                self?.viewModel.pathComponentSelected.accept($0.row)
+            }).disposed(by: disposeBag)
+        
+        pathComponentsTableView.rx.itemDeleted
+            .subscribe(onNext: { [weak self] indexPath in
+                let alert = UIAlertController(title: "Item delete", message: "Are you sure?", preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "Cancel", style: .default, handler: nil))
+                alert.addAction(UIAlertAction(title: "Delete", style: .destructive, handler: { _ in
+                    self?.viewModel.deletePathComponent.accept(indexPath.row)
+                }))
+                self?.present(alert, animated: true, completion: nil)
             }).disposed(by: disposeBag)
     }
     
