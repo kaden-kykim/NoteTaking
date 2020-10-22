@@ -15,9 +15,20 @@ class FileBrowserViewController: UIViewController {
         setupUI()
         
         bindOnNavigationBar()
+        bindOnTableView()
         bindOnToolbar()
         
         viewModel.viewDidLoad.accept(())
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        viewModel.viewWillAppear.accept(())
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        setEditing(false, animated: true)
     }
     
     // MARK: - Properties
@@ -26,6 +37,7 @@ class FileBrowserViewController: UIViewController {
     
     // MARK: - Properties (UI)
     private static let toolbarHeight: CGFloat = 44
+    private lazy var pathComponentsTableView = PathComponentTableView()
     private lazy var newDirectoryBarButtonItem = UIBarButtonItem(image: UIImage.init(systemName: "folder.badge.plus"), style: .plain, target: nil, action: nil)
     private lazy var newNoteBarButtonItem = UIBarButtonItem(image: UIImage.init(systemName: "square.and.pencil"), style: .plain, target: nil, action: nil)
     
@@ -41,17 +53,31 @@ extension FileBrowserViewController {
             }).disposed(by: disposeBag)
     }
     
+    private func bindOnTableView() {
+        viewModel.pathComponentDriver
+            .drive(pathComponentsTableView.rx.items(cellIdentifier: PathComponentTableViewCell.reuseIdentifier,
+                                                    cellType: PathComponentTableViewCell.self))
+            { _, pathComponent, cell in
+                cell.setPathComponent(pathComponent)
+            }.disposed(by: disposeBag)
+        
+        pathComponentsTableView.rx.itemSelected
+            .subscribe(onNext: { [weak self] indexPath in
+                self?.pathComponentsTableView.deselectRow(at: indexPath, animated: true)
+            }).disposed(by: disposeBag)
+    }
+    
     private func bindOnToolbar() {
         newDirectoryBarButtonItem.rx.tap
             .subscribe(onNext: { [weak self] in
-                // MARK: - Test for navigation
+                // MARK: Test for navigation
                 self?.viewModel.pushTo.accept((URL(string: "browser")!, false))
             }).disposed(by: disposeBag)
 
         
         newNoteBarButtonItem.rx.tap
             .subscribe(onNext: { [weak self] in
-                // MARK: - Test for navigation
+                // MARK: Test for navigation
                 self?.viewModel.pushTo.accept((URL(string: "note")!, true))
             }).disposed(by: disposeBag)
     }
@@ -65,8 +91,19 @@ extension FileBrowserViewController {
         view.backgroundColor = .systemBackground
         navigationController?.navigationBar.prefersLargeTitles = true
         navigationItem.largeTitleDisplayMode = .always
+        navigationItem.rightBarButtonItem = editButtonItem
         
+        setupUITableView()
         setupUIToolbar()
+    }
+    
+    private func setupUITableView() {
+        view.addSubview(pathComponentsTableView)
+        pathComponentsTableView.anchors(
+            topAnchor: view.safeAreaLayoutGuide.topAnchor,
+            leadingAnchor: view.leadingAnchor, trailingAnchor: view.trailingAnchor,
+            bottomAnchor: view.safeAreaLayoutGuide.bottomAnchor,
+            padding: .init(top: 0, left: 0, bottom: FileBrowserViewController.toolbarHeight, right: 0))
     }
     
     private func setupUIToolbar() {
@@ -83,6 +120,11 @@ extension FileBrowserViewController {
                         leadingAnchor: view.leadingAnchor,
                         trailingAnchor: view.trailingAnchor,
                         bottomAnchor: view.safeAreaLayoutGuide.bottomAnchor)
+    }
+    
+    override func setEditing(_ editing: Bool, animated: Bool) {
+        super.setEditing(editing, animated: animated)
+        pathComponentsTableView.setEditing(editing, animated: animated)
     }
     
 }
