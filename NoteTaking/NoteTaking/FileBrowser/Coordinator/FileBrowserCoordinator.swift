@@ -32,7 +32,7 @@ extension FileBrowserCoordinatorImpl: FileBrowserCoordinator {
             }
         } else {
             let fileBrowserViewController = FileBrowserViewController()
-            fileBrowserViewController.viewModel = FileBrowserViewModelImpl(coordinator: self, pathURL: url ?? FileBrowserModel.instance.rootURL)
+            fileBrowserViewController.viewModel = FileBrowserViewModelImpl(coordinator: self, url: url ?? NoteTakingModel.instance.rootURL)
             navigationController.pushViewController(fileBrowserViewController, animated: true)
         }
     }

@@ -7,56 +7,67 @@
 
 import Foundation
 
-enum PathComponentType: String {
-    case directory = "Directory"
-    case note = "Note"
+enum CreateError: Error {
+    case DirectoryHasNoteSuffix, AlreadyExist, System
 }
 
-struct PathComponent {
-    let type: PathComponentType
-    var name: String
-    var date: Date = Date()
-    var extraInfo: Double = 0
+struct FileBrowserModel {
+    private let globalModel = NoteTakingModel.instance
+    private let url: URL
+    let name: String
+    
+    init (url: URL) {
+        self.url = url
+        self.name = url.lastPathComponent
+    }
 }
 
-class FileBrowserModel {
+// MARK: - FileBrowser Helper Methods
+extension FileBrowserModel {
     
-    static let instance = FileBrowserModel()
-
-    private static let rootName = "File Browser"
-    private(set) var rootURL: URL!
-    
-    private let fileManager = FileManager.default
-    private let noteSuffix = ".ntpkg"
-    private let noteContentFileName = "contents.note"
-    
-    private init() {
-        do {
-            let rootURL = try fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            self.rootURL = rootURL.appendingPathComponent(FileBrowserModel.rootName)
-            if !fileManager.fileExists(atPath: rootURL.path) {
-                try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true, attributes: nil)
+    func getPathComponents() -> [PathComponent] {
+        let contents = globalModel.getContents(of: url)
+        var dirComponents = [String](), noteComponents = [String]()
+        for content in contents {
+            if content.lastPathComponent.hasSuffix(NoteTakingModel.noteSuffix) {
+                noteComponents.append(content.lastPathComponent)
+            } else {
+                dirComponents.append(content.lastPathComponent)
             }
+        }
+        dirComponents.sort(by: <)
+        noteComponents.sort(by: <)
+        var pathComponents = [PathComponent]()
+        for component in dirComponents {
+            let dirURL = url.appendingPathComponent(component)
+            var pathComponent = PathComponent(type: .directory, name: component)
+            if let attr = globalModel.getAttribute(of: dirURL), let date = attr[.modificationDate] as? Date { pathComponent.date = date }
+            pathComponent.extraInfo = Double(globalModel.getContents(of: dirURL).count)
+            pathComponents.append(pathComponent)
+        }
+        for component in noteComponents {
+            let noteURL = url.appendingPathComponent(component)
+            var noteComponent = PathComponent(type: .note, name: component)
+            if let attr = globalModel.getAttribute(of: noteURL.appendingPathComponent(NoteTakingModel.noteContentFileName)),
+               let date = attr[.modificationDate] as? Date { noteComponent.date = date }
+            pathComponents.append(noteComponent)
+            globalModel.createNoteContentFile(at: noteURL)
+        }
+        return pathComponents
+    }
+    
+    func createDirectory(_ name: String, of type: PathComponent.CType) throws -> URL {
+        do {
+            return try globalModel.createDirectory(name, in: url, of: type)
+        } catch let error as CreateError {
+            throw error
         } catch {
-            assertionFailure("Cannot initial NoteTaking App due to filesystem error")
+            throw CreateError.System
         }
     }
     
-    func getPathComponents(_ url: URL) -> [PathComponent] {
-        // MARK: return dummy data for test
-        return [PathComponent(type: .directory, name: "Dir1"),
-                PathComponent(type: .directory, name: "Dir2"),
-                PathComponent(type: .directory, name: "Dir3"),
-                PathComponent(type: .directory, name: "Dir4"),
-                PathComponent(type: .directory, name: "Dir5"),
-                PathComponent(type: .directory, name: "Dir6"),
-                PathComponent(type: .note, name: "note1"),
-                PathComponent(type: .note, name: "note2"),
-                PathComponent(type: .note, name: "note3"),
-                PathComponent(type: .note, name: "note4"),
-                PathComponent(type: .note, name: "note5"),
-                PathComponent(type: .note, name: "note6"),
-                PathComponent(type: .note, name: "note7")]
+    func deleteDirectory(_ pathComponent: PathComponent) {
+        globalModel.deleteDirectory(at: url.appendingPathComponent(pathComponent.pathName))
     }
     
 }

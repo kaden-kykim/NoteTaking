@@ -62,24 +62,42 @@ extension FileBrowserViewController {
             }.disposed(by: disposeBag)
         
         pathComponentsTableView.rx.itemSelected
-            .subscribe(onNext: { [weak self] indexPath in
-                self?.pathComponentsTableView.deselectRow(at: indexPath, animated: true)
+            .subscribe(onNext: { [weak self] in
+                self?.pathComponentsTableView.deselectRow(at: $0, animated: true)
             }).disposed(by: disposeBag)
     }
     
     private func bindOnToolbar() {
         newDirectoryBarButtonItem.rx.tap
             .subscribe(onNext: { [weak self] in
-                // MARK: Test for navigation
-                self?.viewModel.pushTo.accept((URL(string: "browser")!, false))
+                NewComponentAlert.create(of: .directory) {
+                    self?.viewModel.createPathComponent.accept(($0, .directory))
+                }.present(on: self)
             }).disposed(by: disposeBag)
 
         
         newNoteBarButtonItem.rx.tap
             .subscribe(onNext: { [weak self] in
-                // MARK: Test for navigation
-                self?.viewModel.pushTo.accept((URL(string: "note")!, true))
+                NewComponentAlert.create(of: .note) {
+                    self?.viewModel.createPathComponent.accept(($0, .note))
+                }.present(on: self)
             }).disposed(by: disposeBag)
+        
+        viewModel.errorOnCreatePathComponent
+            .subscribe (onNext: { [weak self] error in
+                let alert = UIAlertController(title: "Create Error", message: nil, preferredStyle: .alert)
+                switch error {
+                case .AlreadyExist:
+                    alert.message = "Input name already exists.\nPlease use another name."
+                case .DirectoryHasNoteSuffix:
+                    alert.message = "Invalid name.\nPlease use another name."
+                case .System:
+                    alert.message = "System Error.\n(\(error.localizedDescription))"
+                }
+                alert.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
+                self?.present(alert, animated: true, completion: nil)
+            })
+            .disposed(by: disposeBag)
     }
     
 }
