@@ -65,8 +65,9 @@ extension NoteTakingModel {
         return newDirURL
     }
     
-    func deleteDirectory(at url: URL) {
-        try? fileManager.removeItem(at: url)
+    func deleteDirectory(at url: URL) -> Bool {
+        do { try fileManager.removeItem(at: url) } catch { return false }
+        return true
     }
     
     @discardableResult
