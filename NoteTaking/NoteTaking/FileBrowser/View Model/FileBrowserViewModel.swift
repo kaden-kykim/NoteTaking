@@ -12,7 +12,9 @@ protocol FileBrowserViewModel: AnyObject {
     // Input
     var viewDidLoad: PublishRelay<Void> { get }
     var viewWillAppear: PublishRelay<Void> { get }
+    var pathComponentSelected: PublishRelay<Int> { get }
     var createPathComponent: PublishRelay<(String, PathComponent.CType)> { get }
+    var deletePathComponent: PublishRelay<Int> { get }
     
     // Output
     var pathTitle: BehaviorRelay<String> { get }
@@ -25,7 +27,9 @@ final class FileBrowserViewModelImpl: FileBrowserViewModel {
     // MARK: - Input
     let viewDidLoad = PublishRelay<Void>()
     let viewWillAppear = PublishRelay<Void>()
+    let pathComponentSelected = PublishRelay<Int>()
     let createPathComponent = PublishRelay<(String, PathComponent.CType)>()
+    let deletePathComponent = PublishRelay<Int>()
     
     // MARK: - Output
     let pathTitle = BehaviorRelay<String>(value: "")
@@ -69,7 +73,24 @@ final class FileBrowserViewModelImpl: FileBrowserViewModel {
     }
     
     private func bindOnPathComponent() {
+        pathComponentSelected
+            .subscribe(onNext: { [weak self] in
+                if let pathComponent = self?.pathComponents.value[$0] {
+                    self?.coordinator.push(to: self?.fileBrowserModel.getURL(of: pathComponent), isNote: pathComponent.type == .note)
+                }
+            }).disposed(by: disposeBag)
         
+        deletePathComponent
+            .subscribe(onNext: { [weak self] in
+                if let self = self {
+                    let pathComponent = self.pathComponents.value[$0]
+                    if self.fileBrowserModel.deleteDirectory(pathComponent) {
+                        var pathComponents = self.pathComponents.value
+                        pathComponents.remove(at: $0)
+                        self.pathComponents.accept(pathComponents)
+                    }
+                }
+            }).disposed(by: disposeBag)
     }
     
     private func bindOnToolbar() {
