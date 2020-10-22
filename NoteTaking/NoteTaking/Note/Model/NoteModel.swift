@@ -7,6 +7,19 @@
 
 import Foundation
 
+enum NoteFontStyle: Int, CaseIterable, CustomStringConvertible {
+    case bold = 0, italic = 1, underline = 2, strikethrough = 3
+    
+    var description: String {
+        switch self {
+        case .bold: return "bold"
+        case .italic: return "italic"
+        case .underline: return "underline"
+        case .strikethrough: return "strikethrough"
+        }
+    }
+}
+
 struct NoteModel {
     private let globalModel = NoteTakingModel.instance
     private let url: URL
