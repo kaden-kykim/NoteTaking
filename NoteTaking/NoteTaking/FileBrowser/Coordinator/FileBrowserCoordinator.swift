@@ -31,9 +31,9 @@ extension FileBrowserCoordinatorImpl: FileBrowserCoordinator {
                 NoteCoordinatorImpl(navigationController: navigationController, fileURL: url).start()
             }
         } else {
-            let viewController = FileBrowserViewController()
-            viewController.coordinator = self // To test navigate, coordinator needs to be in ViewModel
-            navigationController.pushViewController(viewController, animated: true)
+            let fileBrowserViewController = FileBrowserViewController()
+            fileBrowserViewController.viewModel = FileBrowserViewModelImpl(coordinator: self, pathURL: url ?? FileBrowserModel.instance.rootURL)
+            navigationController.pushViewController(fileBrowserViewController, animated: true)
         }
     }
     

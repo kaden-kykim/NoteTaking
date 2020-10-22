@@ -5,7 +5,7 @@
 //  Created by Kaden Kim on 2020-10-21.
 //
 
-import UIKit
+import RxSwift
 
 class FileBrowserViewController: UIViewController {
     
@@ -17,11 +17,11 @@ class FileBrowserViewController: UIViewController {
         testNavigation()
     }
     
-    
+    // MARK: - Properties
+    var viewModel: FileBrowserViewModel!
+    private let disposeBag = DisposeBag()
     
     // MARK: - Start: Test for navigation
-    var coordinator: FileBrowserCoordinatorImpl!
-    
     private func testNavigation() {
         // for browser self
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Browser", style: .plain, target: self, action: #selector(moveToFileBrowser(_:)))
@@ -36,11 +36,11 @@ class FileBrowserViewController: UIViewController {
     }
     
     @objc func moveToFileBrowser(_ sender: UIButton) {
-        coordinator.push()
+        self.viewModel.pushTo.accept((URL(string: "browser")!, false))
     }
     
     @objc func moveToNote(_ sender: UIButton) {
-        coordinator.push(to: URL(string: "dummy"), isNote: true)
+        self.viewModel.pushTo.accept((URL(string: "note")!, true))
     }
     // MARK: - End: Test for navigation
     
