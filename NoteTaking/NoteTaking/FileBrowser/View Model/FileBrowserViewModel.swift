@@ -14,6 +14,7 @@ protocol FileBrowserViewModel: AnyObject {
     var pushTo: PublishRelay<(URL, Bool)> { get }
     
     // Output
+    var pathTitle: BehaviorRelay<String> { get }
     
 }
 
@@ -24,6 +25,7 @@ final class FileBrowserViewModelImpl: FileBrowserViewModel {
     let pushTo = PublishRelay<(URL, Bool)>()
     
     // MARK: - Output
+    let pathTitle = BehaviorRelay<String>(value: "")
     
     // MARK: - Private Properties (Rx)
     private let coordinator: FileBrowserCoordinator
@@ -44,8 +46,8 @@ final class FileBrowserViewModelImpl: FileBrowserViewModel {
     // MARK: - Bindings
     private func bindOnViewLifeCycle() {
         viewDidLoad
-            .subscribe(onNext: {
-                print("viewDidLoad")
+            .subscribe(onNext: { [weak self] in
+                self?.pathTitle.accept(self?.pathURL.lastPathComponent ?? "")
             }).disposed(by: disposeBag)
     }
     
